@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 async function buatAkunManual() {
   // GANTI DATA DI BAWAH INI SESUAI KEINGINAN ANDA
   const usernameBaru = "admin";
-  const emailBaru = "admin@busakiloan.com";
+  const emailBaru = "war55fighter@gmail.com";
   const passwordBaru = "#16BusaKiloan";
 
   try {
