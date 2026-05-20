@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Wallet, TrendingUp, Users, Truck, Target, Calendar, ArrowRight, Clock } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import LoadingOverlay from './LoadingOverlay'; // Import Animasi Loading
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -9,6 +10,7 @@ const MainDashboard = ({ setActiveTab }) => {
   const [orders, setOrders] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [finance, setFinance] = useState([]);
+  const [isLoading, setIsLoading] = useState(false); // State untuk Loading
   
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
@@ -19,14 +21,21 @@ const MainDashboard = ({ setActiveTab }) => {
 
   useEffect(() => {
     const fetchData = async () => {
+      setIsLoading(true); // Tampilkan Loading saat ambil data
       try {
         const [resO, resP, resF] = await Promise.all([ 
           axios.get(`${baseURL}/api/orders`), 
           axios.get(`${baseURL}/api/purchases`), 
           axios.get(`${baseURL}/api/finance`) 
         ]);
-        setOrders(resO.data); setPurchases(resP.data); setFinance(resF.data);
-      } catch (e) { console.error(e); }
+        setOrders(resO.data); 
+        setPurchases(resP.data); 
+        setFinance(resF.data);
+      } catch (e) { 
+        console.error(e); 
+      } finally {
+        setIsLoading(false); // Matikan Loading
+      }
     };
     fetchData();
   }, []);
@@ -43,21 +52,17 @@ const MainDashboard = ({ setActiveTab }) => {
 
   const filteredOrders = orders.filter(o => isMatch(o.tanggal));
   const filteredPurchases = purchases.filter(p => isMatch(p.tanggal));
-  
-  let omset = 0, piutang = 0, profitKasar = 0;
-  
+  const filteredFinance = finance.filter(f => isMatch(f.tanggal));
+
+  let piutang = 0, profitKasar = 0;
+
   filteredOrders.forEach(o => { 
     if (o.status !== 'DIBATALKAN') {
-      // Omset (uang muka/pembayaran yang sudah masuk) tetap dihitung
-      omset += o.dp; 
-
-      // PERBAIKAN LOGIKA: Piutang HANYA dihitung jika barang sudah TERKIRIM
       if (o.status === 'TERKIRIM') {
          const tagihanTotal = o.totalHarga + (o.ongkosKirim || 0);
          piutang += (tagihanTotal - o.dp); 
       }
 
-      // Profit dihitung jika sudah Terkirim atau Selesai
       if (o.status === 'TERKIRIM' || o.status === 'SELESAI') {
         let hppOrder = 0;
         let penjualanOrder = 0;
@@ -84,20 +89,24 @@ const MainDashboard = ({ setActiveTab }) => {
       supplierDebts[suppName] += sisa;
     }
   });
+
   const debtList = Object.keys(supplierDebts).map(k => ({ nama: k, sisa: supplierDebts[k] })).sort((a,b) => b.sisa - a.sisa);
 
-  const totalMasuk = finance.filter(f => f.tipe === 'PEMASUKAN').reduce((s, f) => s + f.nominal, 0);
-  const totalKeluar = finance.filter(f => f.tipe === 'PENGELUARAN').reduce((s, f) => s + f.nominal, 0);
+  // LOGIKA OMSET BARU: Hanya Mengambil Uang Masuk dari Tabel Finance (Kas)
+  const totalMasuk = filteredFinance.filter(f => f.tipe === 'PEMASUKAN').reduce((s, f) => s + f.nominal, 0);
+  const totalKeluar = filteredFinance.filter(f => f.tipe === 'PENGELUARAN').reduce((s, f) => s + f.nominal, 0);
   const saldoKas = totalMasuk - totalKeluar;
+  const omset = totalMasuk; // Omset disamakan dengan Pemasukkan Kas
 
   const chartDataMap = {};
-  filteredOrders.forEach(o => { 
-    if (o.status !== 'DIBATALKAN') {
-      const dLabel = new Date(o.tanggal).toLocaleDateString('id-ID', {day: 'numeric', month:'short'}); 
-      if(!chartDataMap[dLabel]) chartDataMap[dLabel] = { name: dLabel, Omset: 0, sortDate: new Date(o.tanggal) }; 
-      chartDataMap[dLabel].Omset += o.dp; 
+  filteredFinance.forEach(f => { 
+    if (f.tipe === 'PEMASUKAN') {
+      const dLabel = new Date(f.tanggal).toLocaleDateString('id-ID', {day: 'numeric', month:'short'}); 
+      if(!chartDataMap[dLabel]) chartDataMap[dLabel] = { name: dLabel, Omset: 0, sortDate: new Date(f.tanggal) }; 
+      chartDataMap[dLabel].Omset += f.nominal; 
     }
   });
+
   const chartData = Object.values(chartDataMap).sort((a,b) => a.sortDate - b.sortDate);
 
   const pendingOrders = orders
@@ -107,6 +116,9 @@ const MainDashboard = ({ setActiveTab }) => {
   return (
     <div className="flex flex-col h-full overflow-y-auto p-3 md:p-5 space-y-5 bg-gray-50/30">
       
+      {/* Panggil Komponen Loading */}
+      <LoadingOverlay isLoading={isLoading} />
+
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between gap-4 items-start md:items-center shrink-0">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">Dashboard Analisis</h1>
@@ -129,8 +141,8 @@ const MainDashboard = ({ setActiveTab }) => {
           <div className="absolute bottom-2 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-purple-500 flex items-center gap-1 text-[10px] font-bold"><ArrowRight size={14}/> Buka Menu</div>
         </div>
         
-        <div onClick={() => setActiveTab('rekap')} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm cursor-pointer hover:border-blue-300 hover:shadow-md hover:-translate-y-1 transition-all group relative overflow-hidden">
-          <div className="text-[10px] md:text-xs text-gray-500 font-bold uppercase tracking-wider mb-2 flex justify-between items-center relative z-10">Omset Terpilih <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors"><Target size={16}/></div></div>
+        <div onClick={() => setActiveTab('keuangan')} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm cursor-pointer hover:border-blue-300 hover:shadow-md hover:-translate-y-1 transition-all group relative overflow-hidden">
+          <div className="text-[10px] md:text-xs text-gray-500 font-bold uppercase tracking-wider mb-2 flex justify-between items-center relative z-10">Omset Masuk (Kas) <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors"><Target size={16}/></div></div>
           <h3 className="text-lg md:text-2xl font-bold text-gray-900 truncate relative z-10">{formatRp(omset)}</h3>
           <div className="absolute bottom-2 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500 flex items-center gap-1 text-[10px] font-bold"><ArrowRight size={14}/> Buka Menu</div>
         </div>
@@ -193,9 +205,8 @@ const MainDashboard = ({ setActiveTab }) => {
         </div>
 
         <div className="flex flex-col gap-5 lg:col-span-1">
-          
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5 flex flex-col h-[260px] shrink-0">
-            <h4 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-blue-500"/> Grafik Omset Harian</h4>
+            <h4 className="font-bold text-sm text-gray-900 mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-blue-500"/> Grafik Omset Kas Masuk</h4>
             <div className="flex-1 w-full h-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData} margin={{ top: 5, right: 0, left: -25, bottom: 0 }}>

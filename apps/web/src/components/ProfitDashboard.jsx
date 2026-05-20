@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { TrendingUp, Download, Filter, AlertCircle } from 'lucide-react';
+import LoadingOverlay from './LoadingOverlay';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const ProfitDashboard = () => {
   const [orders, setOrders] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
   
   const currentMonthDate = new Date();
   const currentMonth = `${currentMonthDate.getFullYear()}-${String(currentMonthDate.getMonth() + 1).padStart(2, '0')}`;
@@ -19,16 +21,27 @@ const ProfitDashboard = () => {
   }, []);
 
   const fetchOrders = async () => {
+    setIsLoading(true);
     try {
       const res = await axios.get(`${baseURL}/api/orders`);
       setOrders(res.data);
     } catch (error) {
       console.error("Gagal mengambil data profit", error);
-    }
+    } finally { setIsLoading(false); }
   };
 
   const handleExportExcel = () => {
-    alert("Fitur Export Excel untuk halaman Profit bisa disesuaikan backend.");
+    // Bangun start & end dari filter tahun + bulan yang aktif
+    const startMonth = filterBulan || '01';
+    const endMonth = filterBulan || '12';
+    const start = `${filterTahun}-${startMonth}-01`;
+    const lastDay = new Date(parseInt(filterTahun), parseInt(endMonth), 0).getDate();
+    const end = `${filterTahun}-${endMonth}-${lastDay}`;
+    // Kirim searchTerm agar backend bisa filter per pelanggan
+    const token = localStorage.getItem('token');
+    const params = new URLSearchParams({ start, end, type: 'profit', token });
+    if (searchTerm) params.append('search', searchTerm);
+    window.open(`${baseURL}/api/export?${params.toString()}`, '_blank');
   };
 
   const formatRp = (n) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n || 0);
@@ -110,6 +123,7 @@ const ProfitDashboard = () => {
 
   return (
     <div className="flex flex-col h-full space-y-4">
+      <LoadingOverlay isLoading={isLoading} />
       <div className="bg-white p-6 rounded-2xl border shadow-sm flex flex-col gap-2">
         <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
           <TrendingUp className="text-green-600"/> Analisis Laba & Profit

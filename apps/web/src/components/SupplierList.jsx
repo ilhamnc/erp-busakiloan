@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Edit2, Trash2, Save, X, Search, UserPlus, MapPin, Phone, Package, PlusCircle, Eye, PackagePlus, Link as LinkIcon, Download } from 'lucide-react';
 import CreatableSelect from 'react-select/creatable';
+import LoadingOverlay from './LoadingOverlay';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -10,6 +11,7 @@ const SupplierList = () => {
   const [suppliers, setSuppliers] = useState([]);
   const [filteredSuppliers, setFilteredSuppliers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({ id: null, nama: '', kontak: '', alamat: '' });
@@ -55,15 +57,15 @@ const SupplierList = () => {
 
  const handleSave = async () => { 
     if (!form.nama) return alert("Nama supplier wajib diisi"); 
+    setIsLoading(true);
     try {
       await axios.post(`${baseURL}/api/suppliers/upsert`, form); 
       setIsModalOpen(false); 
       fetchSuppliers(); 
       alert("Supplier berhasil disimpan!"); 
     } catch(e) {
-      console.error("Error simpan supplier:", e);
       alert("Gagal menyimpan supplier: \n" + (e.response?.data?.error || e.message));
-    }
+    } finally { setIsLoading(false); }
   };
 
   const handleExportExcel = () => {
@@ -106,13 +108,14 @@ const SupplierList = () => {
 
   const handleSaveProduct = async () => {
       if(!productForm.nama) return alert("Nama produk wajib diisi!");
+      setIsLoading(true);
       try {
           await axios.post(`${baseURL}/api/products/upsert`, productForm);
           setIsProductModalOpen(false); fetchAllProducts();
           if (detailSupplier) loadSupplierProducts(detailSupplier.id);
       } catch (e) { 
           alert("Gagal menyimpan produk: \n\n" + (e.response?.data?.error || e.message)); 
-      }
+      } finally { setIsLoading(false); }
   };
 
   const deleteProduct = async (id) => {
@@ -169,6 +172,7 @@ const SupplierList = () => {
 
   const handleSimpanBarangMasuk = async () => {
     if (!purchaseForm.supplier || purchaseForm.items.length === 0) return alert("Pilih supplier & masukkan minimal 1 barang!");
+    setIsLoading(true);
     try {
       await axios.post(`${baseURL}/api/purchases`, {
         supplierId: purchaseForm.supplier.value, items: purchaseForm.items,
@@ -180,6 +184,7 @@ const SupplierList = () => {
       setIsPurchaseModalOpen(false); setPurchaseForm({ supplier: null, tanggal: '', tglJatuhTempo: '', items: [], bayar: 0, keterangan: '', buktiNota: '' });
       fetchAllProducts(); if (detailSupplier) loadSupplierProducts(detailSupplier.id);
     } catch (e) { alert("Gagal menyimpan transaksi: " + (e.response?.data?.error || e.message)); }
+    finally { setIsLoading(false); }
   };
 
   const masterProducts = (allProducts || []).filter(p => !p.parentId && p.id !== productForm.id);
@@ -188,6 +193,7 @@ const SupplierList = () => {
 
   return (
     <div className="flex flex-col h-full space-y-4">
+      <LoadingOverlay isLoading={isLoading} />
       <datalist id="satuanList">
         <option value="kg" /><option value="gram" /><option value="meter" /><option value="cm" /><option value="roll" /><option value="lembar" /><option value="pcs" /><option value="box" /><option value="liter" />
       </datalist>
@@ -242,7 +248,7 @@ const SupplierList = () => {
               <div><label className="text-xs font-semibold text-gray-600 mb-1 block">Kontak / WA</label><input className="border-2 p-2.5 rounded-lg w-full text-sm outline-none focus:border-blue-500" value={form.kontak} onChange={e=>setForm({...form, kontak:e.target.value})} placeholder="08..." /></div>
               <div><label className="text-xs font-semibold text-gray-600 mb-1 block">Alamat Lengkap</label><textarea className="border-2 p-2.5 rounded-lg w-full text-sm outline-none focus:border-blue-500 h-20" value={form.alamat} onChange={e=>setForm({...form, alamat:e.target.value})} placeholder="Alamat..."></textarea></div>
             </div>
-            <div className="p-4 border-t bg-gray-50 flex gap-3 shrink-0"><button onClick={() => setIsModalOpen(false)} className="flex-1 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-100 transition-colors">Batal</button><button onClick={handleSave} className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold flex justify-center items-center gap-2 hover:bg-blue-700 transition-transform active:scale-95"><Save size={18}/> Simpan</button></div>
+            <div className="p-4 border-t bg-gray-50 flex gap-3 shrink-0"><button onClick={() => setIsModalOpen(false)} className="flex-1 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-100 transition-colors">Batal</button><button onClick={handleSave} disabled={isLoading} className={`flex-1 py-2.5 text-white rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition-transform active:scale-95 disabled:cursor-not-allowed ${isLoading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}><Save size={18}/> {isLoading ? 'Menyimpan...' : 'Simpan'}</button></div>
           </div>
         </div>
       )}
@@ -333,7 +339,7 @@ const SupplierList = () => {
             </div>
             <div className="p-3 md:p-4 border-t bg-gray-50 flex gap-2">
               <button onClick={() => setIsProductModalOpen(false)} className="flex-1 py-2 bg-white border rounded-lg text-xs font-bold text-gray-600 hover:bg-gray-100">Batal</button>
-              <button onClick={handleSaveProduct} className="flex-1 py-2 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 shadow-md">Simpan Master Produk</button>
+              <button onClick={handleSaveProduct} disabled={isLoading} className={`flex-1 py-2 text-white rounded-lg text-xs font-bold shadow-md disabled:cursor-not-allowed ${isLoading ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'}`}>{isLoading ? 'Menyimpan...' : 'Simpan Master Produk'}</button>
             </div>
           </div>
         </div>
@@ -477,7 +483,7 @@ const SupplierList = () => {
               </div>
 
             </div>
-            <div className="p-3 shrink-0 bg-white border-t"><button onClick={handleSimpanBarangMasuk} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold text-sm shadow-md flex justify-center items-center gap-2"><Save size={16}/> SIMPAN BARANG MASUK</button></div>
+            <div className="p-3 shrink-0 bg-white border-t"><button onClick={handleSimpanBarangMasuk} disabled={isLoading} className={`w-full text-white py-3 rounded-lg font-bold text-sm shadow-md flex justify-center items-center gap-2 disabled:cursor-not-allowed ${isLoading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}><Save size={16}/> {isLoading ? 'Menyimpan...' : 'SIMPAN BARANG MASUK'}</button></div>
           </div>
         </div>
       )}

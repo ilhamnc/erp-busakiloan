@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Search, Save, X, Users, Truck, Link as LinkIcon, CheckCircle, FileText, CalendarClock, Edit3, Download, Calendar, PackagePlus, PlusCircle, Trash2, AlertCircle } from 'lucide-react';
 import CreatableSelect from 'react-select/creatable';
+import LoadingOverlay from './LoadingOverlay';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -11,10 +12,16 @@ const PiutangDashboard = () => {
   const [purchases, setPurchases] = useState([]); 
   const [suppliers, setSuppliers] = useState([]); 
   const [products, setProducts] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSupplier, setFilterSupplier] = useState(''); 
-  const [filterBulan, setFilterBulan] = useState('');
+  const today2 = new Date();
+  const defaultStart = `${today2.getFullYear()}-${String(today2.getMonth() + 1).padStart(2, '0')}-01`;
+  const defaultEnd = new Date(today2.getFullYear(), today2.getMonth() + 1, 0).toISOString().split('T')[0];
+  const [startDate, setStartDate] = useState(defaultStart);
+  const [endDate, setEndDate] = useState(defaultEnd);
   const [filterStatusBayar, setFilterStatusBayar] = useState('');
+  const [filterJatuhTempo, setFilterJatuhTempo] = useState('');
 
   const [payModal, setPayModal] = useState(null);
   const [payAmount, setPayAmount] = useState('');
@@ -39,6 +46,7 @@ const PiutangDashboard = () => {
   useEffect(() => { loadData(); fetchProducts(); }, [activeTab]);
 
   const loadData = async () => {
+    setIsLoading(true);
     try {
       if (activeTab === 'customer') { 
         const res = await axios.get(`${baseURL}/api/orders`); 
@@ -49,7 +57,7 @@ const PiutangDashboard = () => {
         const resS = await axios.get(`${baseURL}/api/suppliers`); 
         setSuppliers(resS.data); 
       }
-    } catch (e) { console.error(e); }
+    } catch { } finally { setIsLoading(false); }
   };
 
   const fetchProducts = async () => { 
@@ -61,32 +69,38 @@ const PiutangDashboard = () => {
 
   const handlePaySupplier = async () => { 
     if(!window.confirm("Simpan pembaruan data pembayaran ini?")) return;
+    setIsLoading(true);
     try { 
       await axios.put(`${baseURL}/api/purchases/${payModal.id}/payment`, { totalBayar: safeNum(payAmount), buktiBayar: buktiTf, tanggal: payDate }); 
       alert("✅ Data Hutang Supplier berhasil diupdate!");
       setPayModal(null); setPayAmount(''); setBuktiTf(''); loadData(); 
-    } catch (e) { alert("Gagal update hutang"); } 
+    } catch { alert("Gagal update hutang"); }
+    finally { setIsLoading(false); }
   };
 
   const handlePayCustomer = async () => { 
     if(!window.confirm("Simpan pembaruan data pembayaran ini?")) return;
+    setIsLoading(true);
     try { 
       const newDp = safeNum(payAmount); const sisa = payModal.grandTotal - newDp; 
       await axios.put(`${baseURL}/api/orders/${payModal.id}/payment`, { status: sisa <= 0 ? 'SELESAI' : 'TERKIRIM', dp: newDp, buktiLunas: buktiTf, tanggal: payDate }); 
       alert("✅ Data Piutang Customer berhasil diupdate!");
       setPayModal(null); setPayAmount(''); setBuktiTf(''); loadData(); 
-    } catch (e) { alert("Gagal update piutang"); } 
+    } catch { alert("Gagal update piutang"); }
+    finally { setIsLoading(false); }
   };
 
   const handleSaveDueDate = async () => {
     if(!window.confirm("Simpan perubahan tanggal jatuh tempo ini?")) return;
+    setIsLoading(true);
     try {
       const formattedDate = newDueDate ? new Date(newDueDate).toISOString() : null;
       if (activeTab === 'customer') await axios.put(`${baseURL}/api/orders/${dateModal.id}/duedate`, { tanggalJatuhTempo: formattedDate });
       else await axios.put(`${baseURL}/api/purchases/${dateModal.id}/duedate`, { tanggalJatuhTempo: formattedDate });
       alert("✅ Tanggal Jatuh Tempo diperbarui!");
       setDateModal(null); setNewDueDate(''); loadData();
-    } catch (e) { alert("Gagal menyimpan"); }
+    } catch { alert("Gagal menyimpan"); }
+    finally { setIsLoading(false); }
   };
 
   const handleCreateSupplier = async (val) => {
@@ -155,6 +169,7 @@ const PiutangDashboard = () => {
   const handleSimpanBarangMasuk = async () => { 
     if(!purchaseForm.supplier || purchaseForm.items.length===0) return alert("Pilih supplier dan tambahkan minimal 1 barang!"); 
     if(!window.confirm(purchaseForm.id ? "PERINGATAN: Menyimpan revisi akan menyesuaikan ulang stok gudang. Lanjutkan?" : "Simpan Barang Masuk ini? Stok akan otomatis bertambah.")) return;
+    setIsLoading(true);
     try { 
         const payload = {
             supplierId: purchaseForm.supplier.value, items: purchaseForm.items, tanggal: purchaseForm.tanggal || new Date().toISOString(), 
@@ -169,16 +184,13 @@ const PiutangDashboard = () => {
            alert("✅ BARANG MASUK BERHASIL DISIMPAN!"); 
         }
         setIsPurchaseModalOpen(false); loadData(); 
-    } catch(e){ alert("Gagal menyimpan data."); } 
+    } catch { alert("Gagal menyimpan data."); }
+    finally { setIsLoading(false); }
   };
 
   const handleExportPiutang = () => {
-    let start, end;
-    if (filterBulan) {
-      start = `${filterBulan}-01`; end = new Date(filterBulan.split('-')[0], filterBulan.split('-')[1], 0).toISOString().split('T')[0];
-    } else {
-      start = `${new Date().getFullYear()}-01-01`; end = `${new Date().getFullYear()}-12-31`;
-    }
+    const start = startDate || `${new Date().getFullYear()}-01-01`;
+    const end = endDate || `${new Date().getFullYear()}-12-31`;
     const token = localStorage.getItem('token');
     window.open(`${baseURL}/api/export?start=${start}&end=${end}&type=piutang&token=${token}`, '_blank');
   };
@@ -187,20 +199,50 @@ const PiutangDashboard = () => {
 
   const filteredOrders = orders.filter(o => { 
     const matchName = o.customer?.nama.toLowerCase().includes(searchTerm.toLowerCase()) || o.customerId?.toString().includes(searchTerm) || o.id?.toString().includes(searchTerm);
-    const matchBulan = filterBulan === '' || getYearMonth(o.tanggal) === filterBulan;
+    let matchTanggal = true;
+    if (startDate || endDate) {
+      const d = new Date(o.tanggal).setHours(0,0,0,0);
+      if (startDate) matchTanggal = matchTanggal && d >= new Date(startDate).setHours(0,0,0,0);
+      if (endDate) matchTanggal = matchTanggal && d <= new Date(endDate).setHours(23,59,59,999);
+    }
     const isLunas = o.kekurangan <= 0;
     const matchStatus = filterStatusBayar === '' ? true : filterStatusBayar === 'LUNAS' ? isLunas : !isLunas;
-    return matchName && matchBulan && matchStatus; 
+    let matchJatuhTempo = true;
+    if (filterJatuhTempo && !isLunas) {
+      const today = new Date(); today.setHours(0,0,0,0);
+      const due = o.tanggalJatuhTempo ? new Date(o.tanggalJatuhTempo) : new Date(new Date(o.tanggal).setMonth(new Date(o.tanggal).getMonth() + 1));
+      due.setHours(0,0,0,0);
+      const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+      if (filterJatuhTempo === 'OVERDUE') matchJatuhTempo = diffDays < 0;
+      else if (filterJatuhTempo === 'TODAY') matchJatuhTempo = diffDays === 0;
+      else if (filterJatuhTempo === 'WEEK') matchJatuhTempo = diffDays >= 0 && diffDays <= 7;
+    }
+    return matchName && matchTanggal && matchStatus && matchJatuhTempo; 
   });
   const totalPiutangCustomer = filteredOrders.reduce((sum, o) => sum + o.kekurangan, 0); 
   
   const filteredPurchases = purchases.filter(p => { 
     const matchSearch = p.supplier?.nama.toLowerCase().includes(searchTerm.toLowerCase()) || p.supplierId?.toString().includes(searchTerm) || p.id?.toString().includes(searchTerm);
     const matchSupplier = filterSupplier === '' || p.supplierId.toString() === filterSupplier;
-    const matchBulan = filterBulan === '' || getYearMonth(p.tanggal) === filterBulan;
+    let matchTanggal = true;
+    if (startDate || endDate) {
+      const d = new Date(p.tanggal).setHours(0,0,0,0);
+      if (startDate) matchTanggal = matchTanggal && d >= new Date(startDate).setHours(0,0,0,0);
+      if (endDate) matchTanggal = matchTanggal && d <= new Date(endDate).setHours(23,59,59,999);
+    }
     const isLunas = p.sisaTagihan <= 0;
     const matchStatus = filterStatusBayar === '' ? true : filterStatusBayar === 'LUNAS' ? isLunas : !isLunas;
-    return matchSearch && matchSupplier && matchBulan && matchStatus; 
+    let matchJatuhTempo = true;
+    if (filterJatuhTempo && !isLunas) {
+      const today = new Date(); today.setHours(0,0,0,0);
+      const due = p.tanggalJatuhTempo ? new Date(p.tanggalJatuhTempo) : new Date(new Date(p.tanggal).setDate(new Date(p.tanggal).getDate() + 7));
+      due.setHours(0,0,0,0);
+      const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+      if (filterJatuhTempo === 'OVERDUE') matchJatuhTempo = diffDays < 0;
+      else if (filterJatuhTempo === 'TODAY') matchJatuhTempo = diffDays === 0;
+      else if (filterJatuhTempo === 'WEEK') matchJatuhTempo = diffDays >= 0 && diffDays <= 7;
+    }
+    return matchSearch && matchSupplier && matchTanggal && matchStatus && matchJatuhTempo; 
   });
   const totalHutangSupplier = filteredPurchases.reduce((sum, p) => sum + p.sisaTagihan, 0); 
 
@@ -228,6 +270,7 @@ const PiutangDashboard = () => {
 
   return (
     <div className="space-y-3 md:space-y-5 h-full flex flex-col">
+      <LoadingOverlay isLoading={isLoading} />
       <div className="flex flex-col md:flex-row gap-3 shrink-0">
         <div className="flex gap-2 flex-1">
           <button onClick={() => {setActiveTab('customer'); setSearchTerm(''); setFilterSupplier('');}} className={`flex-1 py-3 rounded-xl font-bold flex justify-center items-center gap-2 border-2 text-xs md:text-sm transition-all ${activeTab === 'customer' ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-sm' : 'bg-white border-gray-100 text-gray-500 hover:bg-gray-50'}`}><Users size={18}/> PIUTANG CUSTOMER</button>
@@ -246,9 +289,20 @@ const PiutangDashboard = () => {
                  <PackagePlus size={16}/> Input Barang Masuk
               </button>
             )}
-            <div className="flex items-center bg-white border rounded-xl px-3 shadow-sm flex-1 lg:flex-none"><input type="month" className="p-2 text-xs font-bold text-gray-700 bg-transparent outline-none w-full cursor-pointer" value={filterBulan} onChange={(e) => setFilterBulan(e.target.value)} />{filterBulan && <button onClick={()=>setFilterBulan('')} className="text-red-400 hover:text-red-600"><X size={16}/></button>}</div>
+            <div className="flex items-center gap-1 bg-white border rounded-xl px-2 py-1 shadow-sm">
+              <span className="text-[10px] font-bold text-gray-500 whitespace-nowrap">Dari</span>
+              <input type="date" className="p-1 text-xs font-bold text-gray-700 outline-none bg-transparent" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              <span className="text-gray-400 font-bold">—</span>
+              <input type="date" className="p-1 text-xs font-bold text-gray-700 outline-none bg-transparent" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            </div>
             {activeTab === 'supplier' && <select className="border bg-white p-2.5 rounded-xl text-xs font-bold text-gray-600 outline-none flex-1 lg:flex-none shadow-sm cursor-pointer" value={filterSupplier} onChange={(e) => setFilterSupplier(e.target.value)}><option value="">Semua Supplier</option>{suppliers.map(s => (<option key={s.id} value={s.id}>{s.nama} (#{s.id})</option>))}</select>}
-            <select className="border bg-white p-2.5 rounded-xl text-xs font-bold text-gray-600 outline-none flex-1 lg:flex-none shadow-sm cursor-pointer" value={filterStatusBayar} onChange={(e) => setFilterStatusBayar(e.target.value)}><option value="">Semua Tagihan</option><option value="BELUM_LUNAS">Belum Lunas / Piutang</option><option value="LUNAS">Sudah Lunas</option></select>
+            <select className="border bg-white p-2.5 rounded-xl text-xs font-bold text-gray-600 outline-none flex-1 lg:flex-none shadow-sm cursor-pointer" value={filterStatusBayar} onChange={(e) => setFilterStatusBayar(e.target.value)}><option value="">Semua Tagihan</option><option value="BELUM_LUNAS">Belum Lunas</option><option value="LUNAS">Sudah Lunas</option></select>
+            <select className="border bg-white p-2.5 rounded-xl text-xs font-bold text-gray-600 outline-none flex-1 lg:flex-none shadow-sm cursor-pointer" value={filterJatuhTempo} onChange={(e) => setFilterJatuhTempo(e.target.value)}>
+              <option value="">Semua Jatuh Tempo</option>
+              <option value="OVERDUE">&#x26A0; Sudah Lewat</option>
+              <option value="TODAY">Jatuh Tempo Hari Ini</option>
+              <option value="WEEK">Dalam 7 Hari</option>
+            </select>
           </div>
           <div className="relative w-full lg:w-64 mt-2 lg:mt-0"><Search className="absolute left-3 top-2.5 text-gray-400" size={16} /><input className="pl-9 pr-4 py-2.5 border rounded-xl w-full text-xs outline-none focus:border-blue-500 shadow-sm bg-white" placeholder="Cari ID / Nama..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
         </div>
@@ -528,8 +582,8 @@ const PiutangDashboard = () => {
 
               <div className="flex gap-3 pt-2">
                   <button onClick={() => setIsPurchaseModalOpen(false)} className="flex-1 py-4 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 transition-colors">Batalkan</button>
-                  <button onClick={handleSimpanBarangMasuk} className={`flex-[2] text-white py-4 rounded-xl font-bold text-lg shadow-lg flex justify-center items-center gap-2 transition-transform active:scale-95 ${purchaseForm.id ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}>
-                      <Save size={22}/> {purchaseForm.id ? 'SIMPAN REVISI NOTA' : 'SIMPAN BARANG MASUK'}
+                  <button onClick={handleSimpanBarangMasuk} disabled={isLoading} className={`flex-[2] text-white py-4 rounded-xl font-bold text-lg shadow-lg flex justify-center items-center gap-2 transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${purchaseForm.id ? (isLoading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700') : (isLoading ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700')}`}>
+                      <Save size={22}/> {isLoading ? 'Menyimpan...' : (purchaseForm.id ? 'SIMPAN REVISI NOTA' : 'SIMPAN BARANG MASUK')}
                   </button>
               </div>
             </div>
@@ -579,7 +633,7 @@ const PiutangDashboard = () => {
 
               <div className="flex gap-3">
                 <button onClick={() => setPayModal(null)} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors">Batal</button>
-                <button onClick={activeTab === 'customer' ? handlePayCustomer : handlePaySupplier} className={`flex-1 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 shadow-md transition-transform active:scale-95 ${activeTab === 'customer' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'}`}><Save size={18}/> Simpan</button>
+                  <button onClick={activeTab === 'customer' ? handlePayCustomer : handlePaySupplier} disabled={isLoading} className={`flex-1 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2 shadow-md transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${activeTab === 'customer' ? (isLoading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700') : (isLoading ? 'bg-gray-400' : 'bg-red-600 hover:bg-red-700')}`}><Save size={18}/> {isLoading ? 'Menyimpan...' : 'Simpan'}</button>
               </div>
            </div>
         </div>

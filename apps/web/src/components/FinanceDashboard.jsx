@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Search, PlusCircle, X, Wallet, ArrowDownLeft, ArrowUpRight, Link as LinkIcon, Trash2, Edit2, Download } from 'lucide-react';
+import LoadingOverlay from './LoadingOverlay';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -8,14 +9,24 @@ const FinanceDashboard = () => {
   const [transactions, setTransactions] = useState([]);
   const [activeTab, setActiveTab] = useState('ALL'); 
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterBulan, setFilterBulan] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false); 
   const [form, setForm] = useState({ id: null, tipe: 'PENGELUARAN', nama: '', nominal: '', tanggal: '', metode: 'CASH', keterangan: '', buktiLink: '' });
 
+  const today = new Date();
+  const defaultStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+  const defaultEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+  const [startDate, setStartDate] = useState(defaultStart);
+  const [endDate, setEndDate] = useState(defaultEnd);
+
   useEffect(() => { loadData(); }, []);
-  const loadData = async () => { try { const res = await axios.get(`${baseURL}/api/finance`); setTransactions(res.data); } catch (e) {} };
+  const loadData = async () => {
+    setIsLoading(true);
+    try { const res = await axios.get(`${baseURL}/api/finance`); setTransactions(res.data); }
+    catch { } finally { setIsLoading(false); }
+  };
 
   const openAddModal = () => {
     setForm({ id: null, tipe: 'PENGELUARAN', nama: '', nominal: '', tanggal: new Date().toISOString().split('T')[0], metode: 'CASH', keterangan: '', buktiLink: '' });
@@ -29,32 +40,30 @@ const FinanceDashboard = () => {
 
   const handleSaveManual = async () => {
     if (!form.nama || !form.nominal) return alert("Nama dan Nominal wajib diisi!");
+    setIsLoading(true);
     try { 
       if (isEditing) await axios.put(`${baseURL}/api/finance/manual/${form.id}`, form);
       else await axios.post(`${baseURL}/api/finance/manual`, form); 
       setIsModalOpen(false); loadData(); 
-    } catch (e) { alert("Gagal menyimpan data"); }
+    } catch { alert("Gagal menyimpan data"); }
+    finally { setIsLoading(false); }
   };
 
   const handleDeleteManual = async (dbId) => {
-    if (confirm("Hapus catatan manual ini?")) { await axios.delete(`${baseURL}/api/finance/manual/${dbId}`); loadData(); }
+    if (!confirm("Hapus catatan manual ini?")) return;
+    setIsLoading(true);
+    try { await axios.delete(`${baseURL}/api/finance/manual/${dbId}`); loadData(); }
+    catch { } finally { setIsLoading(false); }
   };
 
   const handleExportKeuangan = () => {
-    let start, end;
-    if (filterBulan) {
-      start = `${filterBulan}-01`;
-      end = new Date(filterBulan.split('-')[0], filterBulan.split('-')[1], 0).toISOString().split('T')[0];
-    } else {
-      start = `${new Date().getFullYear()}-01-01`;
-      end = `${new Date().getFullYear()}-12-31`;
-    }
+    const start = startDate || `${new Date().getFullYear()}-01-01`;
+    const end = endDate || `${new Date().getFullYear()}-12-31`;
     const token = localStorage.getItem('token');
     window.open(`${baseURL}/api/export?start=${start}&end=${end}&type=keuangan&token=${token}`, '_blank');
   };
 
   const formatRp = (n) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n || 0);
-  const getYearMonth = (dateString) => { const d = new Date(dateString); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 
   const renderLinks = (textString) => {
     if (!textString) return <span className="text-gray-300">-</span>;
@@ -68,8 +77,13 @@ const FinanceDashboard = () => {
   const filtered = transactions.filter(t => {
     const matchTab = activeTab === 'ALL' || t.tipe === activeTab;
     const matchSearch = t.nama.toLowerCase().includes(searchTerm.toLowerCase()) || t.keterangan.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchBulan = filterBulan === '' || getYearMonth(t.tanggal) === filterBulan;
-    return matchTab && matchSearch && matchBulan;
+    let matchTanggal = true;
+    if (startDate || endDate) {
+      const d = new Date(t.tanggal).setHours(0,0,0,0);
+      if (startDate) matchTanggal = matchTanggal && d >= new Date(startDate).setHours(0,0,0,0);
+      if (endDate) matchTanggal = matchTanggal && d <= new Date(endDate).setHours(23,59,59,999);
+    }
+    return matchTab && matchSearch && matchTanggal;
   });
 
   const totalMasuk = filtered.filter(t => t.tipe === 'PEMASUKAN').reduce((s, t) => s + t.nominal, 0);
@@ -78,6 +92,7 @@ const FinanceDashboard = () => {
 
   return (
     <div className="space-y-3 md:space-y-4 h-full flex flex-col">
+      <LoadingOverlay isLoading={isLoading} />
       <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border flex flex-col md:flex-row justify-between gap-3">
         <div><h2 className="text-lg md:text-xl font-bold text-gray-800 flex items-center gap-2"><Wallet size={20}/> Buku Kas</h2><p className="text-[10px] md:text-xs text-gray-500">Pemasukan (Order) dan Pengeluaran (Supplier & Operasional).</p></div>
         <div className="flex gap-2 w-full md:w-auto">
@@ -100,8 +115,13 @@ const FinanceDashboard = () => {
             <button onClick={()=>setActiveTab('PENGELUARAN')} className={`flex-1 sm:flex-none px-3 py-1.5 rounded-md font-bold text-[10px] md:text-xs ${activeTab==='PENGELUARAN'?'bg-red-600 text-white':'text-red-600'}`}>KELUAR</button>
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
-            <div className="flex items-center gap-1 bg-white border rounded-lg px-2 w-1/3 sm:w-auto"><input type="month" className="p-1 text-[10px] md:text-xs font-bold text-gray-700 outline-none w-full cursor-pointer" value={filterBulan} onChange={(e) => setFilterBulan(e.target.value)} />{filterBulan && <button onClick={()=>setFilterBulan('')} className="text-red-400"><X size={12}/></button>}</div>
-            <div className="relative w-2/3 sm:w-48"><Search className="absolute left-2.5 top-2 text-gray-400" size={14} /><input className="pl-8 pr-3 py-1.5 border rounded-lg w-full text-xs outline-none focus:border-purple-500" placeholder="Cari data..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+            <div className="flex items-center gap-2 bg-gray-50 border rounded-lg px-2 py-1 w-full sm:w-auto">
+              <span className="text-[10px] font-bold text-gray-500 whitespace-nowrap">Dari</span>
+              <input type="date" className="p-1 text-[10px] md:text-xs font-bold text-gray-700 outline-none bg-transparent" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              <span className="text-gray-400 font-bold">—</span>
+              <input type="date" className="p-1 text-[10px] md:text-xs font-bold text-gray-700 outline-none bg-transparent" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            </div>
+            <div className="relative w-full sm:w-48"><Search className="absolute left-2.5 top-2 text-gray-400" size={14} /><input className="pl-8 pr-3 py-1.5 border rounded-lg w-full text-xs outline-none focus:border-purple-500" placeholder="Cari data..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
           </div>
         </div>
 
@@ -172,7 +192,7 @@ const FinanceDashboard = () => {
 
               <div className="flex gap-2 pt-3 shrink-0">
                 <button onClick={() => setIsModalOpen(false)} className="flex-1 bg-gray-100 text-gray-600 py-2 rounded-lg text-xs font-bold hover:bg-gray-200">Batal</button>
-                <button onClick={handleSaveManual} className="flex-1 bg-purple-600 text-white py-2 rounded-lg text-xs font-bold hover:bg-purple-700 shadow-sm transition-transform active:scale-95">Simpan</button>
+                <button onClick={handleSaveManual} disabled={isLoading} className={`flex-1 text-white py-2 rounded-lg text-xs font-bold shadow-sm transition-transform active:scale-95 disabled:cursor-not-allowed ${isLoading ? 'bg-gray-400' : 'bg-purple-600 hover:bg-purple-700'}`}>{isLoading ? 'Menyimpan...' : 'Simpan'}</button>
               </div>
            </div>
         </div>

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Edit2, Trash2, Save, X, PlusCircle, Search, PackagePlus, Tags, FolderPlus, FileText, Link as LinkIcon, History, Download } from 'lucide-react';
 import CreatableSelect from 'react-select/creatable';
+import LoadingOverlay from './LoadingOverlay';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -13,6 +14,7 @@ const StockList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterStok, setFilterStok] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [form, setForm] = useState({ id: null, nama: '', categoryId: '', hargaJual: '', hpp: '', stok: '', parentId: '', isHppManual: false, satuanBeli: 'kg', satuanJual: 'pcs' });
@@ -80,13 +82,14 @@ const StockList = () => {
   
   const handleSaveProduct = async () => { 
     if(!form.nama) return alert("Nama produk wajib diisi!"); 
+    setIsLoading(true);
     try { 
       await axios.post(`${baseURL}/api/products/upsert`, form); 
       setIsProductModalOpen(false); 
       fetchProducts(); 
     } catch(e) { 
       alert("Gagal menyimpan produk: \n\n" + (e.response?.data?.error || e.message)); 
-    } 
+    } finally { setIsLoading(false); }
   };
   
   const openHistory = async (product) => { setHistoryModal(product); try { const res = await axios.get(`${baseURL}/api/products/${product.id}/history`); setStockHistory(res.data); } catch (e) {} };
@@ -132,6 +135,7 @@ const StockList = () => {
   const handleSimpanBarangMasuk = async () => { 
     if(!purchaseForm.supplier || purchaseForm.items.length===0) return alert("Pilih supplier dan minimal 1 barang!"); 
     if(!window.confirm("Apakah Anda yakin ingin menyimpan data restock barang masuk ini?")) return;
+    setIsLoading(true);
     try { 
         await axios.post(`${baseURL}/api/purchases`, {
             supplierId: purchaseForm.supplier.value, 
@@ -148,7 +152,8 @@ const StockList = () => {
         setIsPurchaseModalOpen(false); 
         setPurchaseForm({ supplier: null, tanggal: '', tglJatuhTempo: '', items: [], bayar: '', metodeBayar: 'TF', buktiTf: '', keterangan: '', buktiNota: '' }); 
         fetchProducts(); 
-    } catch(e){ alert("Gagal simpan barang masuk: " + (e.response?.data?.error || e.message)); } 
+    } catch(e){ alert("Gagal simpan barang masuk: " + (e.response?.data?.error || e.message)); }
+    finally { setIsLoading(false); }
   };
 
   const handleExportExcel = () => {
@@ -163,6 +168,7 @@ const StockList = () => {
 
   return (
     <div className="flex flex-col h-full space-y-3 md:space-y-4">
+      <LoadingOverlay isLoading={isLoading} />
       <datalist id="satuanList">
         <option value="kg" /><option value="gram" /><option value="meter" /><option value="cm" /><option value="roll" /><option value="lembar" /><option value="pcs" /><option value="box" /><option value="liter" />
       </datalist>
@@ -259,7 +265,7 @@ const StockList = () => {
             </div>
             <div className="p-3 md:p-4 border-t bg-gray-50 flex gap-2">
                 <button onClick={() => setIsProductModalOpen(false)} className="flex-1 py-2 bg-white border rounded-lg text-xs font-bold text-gray-600 hover:bg-gray-100">Batal</button>
-                <button onClick={handleSaveProduct} className="flex-1 py-2 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 shadow-md">Simpan Data</button>
+                <button onClick={handleSaveProduct} disabled={isLoading} className={`flex-1 py-2 text-white rounded-lg text-xs font-bold shadow-md disabled:cursor-not-allowed ${isLoading ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'}`}>{isLoading ? 'Menyimpan...' : 'Simpan Data'}</button>
             </div>
           </div>
         </div>
@@ -439,7 +445,7 @@ const StockList = () => {
               </div>
 
             </div>
-            <div className="p-3 shrink-0 bg-white border-t"><button onClick={handleSimpanBarangMasuk} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold text-sm shadow-md flex justify-center items-center gap-2"><Save size={16}/> SIMPAN BARANG MASUK</button></div>
+            <div className="p-3 shrink-0 bg-white border-t"><button onClick={handleSimpanBarangMasuk} disabled={isLoading} className={`w-full text-white py-3 rounded-lg font-bold text-sm shadow-md flex justify-center items-center gap-2 disabled:cursor-not-allowed ${isLoading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}><Save size={16}/> {isLoading ? 'Menyimpan...' : 'SIMPAN BARANG MASUK'}</button></div>
           </div>
         </div>
       )}

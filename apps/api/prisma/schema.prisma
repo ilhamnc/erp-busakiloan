@@ -12,44 +12,55 @@ datasource db {
 // 1. MODUL AUTENTIKASI (AKUN)
 // ==========================================
 model User {
-  id         Int      @id @default(autoincrement())
-  username   String   @unique
-  email      String   @unique
-  password   String
-  resetToken String?  @db.Text
-  createdAt  DateTime @default(now())
+  id                 Int                @id @default(autoincrement())
+  username           String             @unique
+  email              String             @unique
+  password           String
+  resetToken         String?            @db.Text
+  createdAt          DateTime           @default(now())
 
   // Relasi kepemilikan data
-  customers  Customer[]
-  categories Category[]
-  products   Product[]
-  orders     Order[]
-  sopirs     Sopir[]
-  suppliers  Supplier[]
-  purchases  Purchase[]
-  manualTxs  ManualTransaction[]
+  customers          Customer[]
+  customerCategories CustomerCategory[] 
+  categories         Category[]
+  products           Product[]
+  orders             Order[]
+  sopirs             Sopir[]
+  suppliers          Supplier[]
+  purchases          Purchase[]
+  manualTxs          ManualTransaction[]
 }
 
 // ==========================================
 // 2. MODUL PELANGGAN & PENJUALAN
 // ==========================================
+model CustomerCategory {
+  id        Int        @id @default(autoincrement())
+  userId    Int
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nama      String     
+  customers Customer[]
+}
+
 model Customer {
-  id                      Int           @id @default(autoincrement())
-  userId                  Int           // Pemilik Data
-  user                    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                      Int               @id @default(autoincrement())
+  userId                  Int               
+  user                    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId              Int?              
+  category                CustomerCategory? @relation(fields: [categoryId], references: [id]) 
   nama                    String
   alamat                  String?
   kontak                  String?
-  ongkirDefault           Float         @default(0)
-  ongkirPerusahaanDefault Float         @default(0)
-  catatan                 String?       @db.Text
+  ongkirDefault           Float             @default(0)
+  ongkirPerusahaanDefault Float             @default(0)
+  catatan                 String?           @db.Text
   orders                  Order[]
   hargaKhusus             HargaKhusus[]
 }
 
 model Order {
   id                Int         @id @default(autoincrement())
-  userId            Int         // Pemilik Data
+  userId            Int         
   user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   customerId        Int
   customer          Customer    @relation(fields: [customerId], references: [id])
@@ -88,19 +99,19 @@ model OrderItem {
 // ==========================================
 model Category {
   id       Int       @id @default(autoincrement())
-  userId   Int       // Pemilik Data
+  userId   Int       
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   nama     String    
   products Product[]
 }
 
 model Product {
-  id          Int      @id @default(autoincrement())
-  userId      Int      // Pemilik Data
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          Int       @id @default(autoincrement())
+  userId      Int       
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   nama        String
   kategori    String?  
-  categoryId  Int?           
+  categoryId  Int?             
   category    Category? @relation(fields: [categoryId], references: [id])
   hargaJual   Float
   hpp         Float
@@ -115,18 +126,18 @@ model Product {
   orderItems    OrderItem[]
   hargaKhusus   HargaKhusus[]
   purchaseItems PurchaseItem[]
-  stockHistory  StockHistory[] // Tambahan relasi historis
+  stockHistory  StockHistory[] 
 }
 
 model StockHistory {
-  id          Int      @id @default(autoincrement())
-  productId   Int
-  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  qty         Float
-  tipe        String   // MASUK atau KELUAR
-  keterangan  String?
-  ref         String?
-  tanggal     DateTime @default(now())
+  id         Int      @id @default(autoincrement())
+  productId  Int
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  qty        Float
+  tipe       String   // MASUK atau KELUAR
+  keterangan String?
+  ref        String?
+  tanggal    DateTime @default(now())
 }
 
 model HargaKhusus {
@@ -144,13 +155,13 @@ model HargaKhusus {
 // 4. MODUL PENGIRIMAN (SOPIR)
 // ==========================================
 model Sopir {
-  id      Int           @id @default(autoincrement())
-  userId  Int           // Pemilik Data
-  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  nama    String
-  kontak  String?
-  ongkir  OngkirSopir[]
-  orders  Order[]
+  id     Int           @id @default(autoincrement())
+  userId Int           
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nama   String
+  kontak String?
+  ongkir OngkirSopir[]
+  orders Order[]
 }
 
 model OngkirSopir {
@@ -166,7 +177,7 @@ model OngkirSopir {
 // ==========================================
 model Supplier {
   id        Int        @id @default(autoincrement())
-  userId    Int        // Pemilik Data
+  userId    Int        
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   nama      String
   kontak    String?
@@ -177,7 +188,7 @@ model Supplier {
 
 model Purchase {
   id                Int            @id @default(autoincrement())
-  userId            Int            // Pemilik Data
+  userId            Int            
   user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   supplierId        Int
   supplier          Supplier       @relation(fields: [supplierId], references: [id])
@@ -202,7 +213,7 @@ model PurchaseItem {
   product    Product  @relation(fields: [productId], references: [id])
   qtyBeli    Float    @default(0) 
   qty        Float                
-  hargaBeli  Float    
+  hargaBeli  Float  
   subtotal   Float
 }
 
@@ -211,7 +222,7 @@ model PurchaseItem {
 // ==========================================
 model ManualTransaction {
   id         Int      @id @default(autoincrement())
-  userId     Int      // Pemilik Data
+  userId     Int      
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tipe       String   
   nama       String   

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Search, Edit2, Trash2, PlusCircle, Save, X, Truck, MapPin, ChevronDown, Download } from 'lucide-react';
+import LoadingOverlay from './LoadingOverlay';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -14,6 +15,7 @@ const SopirList = () => {
   const [expandedRow, setExpandedRow] = useState(null);
 
   const [form, setForm] = useState({ id: null, nama: '', kontak: '', ongkir: [] });
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => { fetchSopirs(); }, []);
 
@@ -48,12 +50,21 @@ const SopirList = () => {
   const handleSave = async () => {
     if (!form.nama) return alert("Nama sopir wajib diisi!");
     const validOngkir = form.ongkir.filter(o => o.daerah.trim() !== '' && o.tarif !== '');
+    setIsLoading(true);
     try {
       await axios.post(`${baseURL}/api/sopir/upsert`, { ...form, ongkir: validOngkir });
       setIsModalOpen(false); fetchSopirs();
     } catch (e) { 
       alert("Gagal menyimpan data: " + (e.response?.data?.error || e.message)); 
-    }
+    } finally { setIsLoading(false); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Hapus sopir ini?')) return;
+    setIsLoading(true);
+    try { await axios.delete(`${baseURL}/api/sopir/${id}`); fetchSopirs(); }
+    catch { alert('Gagal menghapus sopir'); }
+    finally { setIsLoading(false); }
   };
 
   const handleExportExcel = () => {
@@ -72,6 +83,7 @@ const SopirList = () => {
 
   return (
     <div className="flex flex-col h-full space-y-4">
+      <LoadingOverlay isLoading={isLoading} />
       <div className="bg-white p-4 border flex flex-col sm:flex-row justify-between items-center gap-4 rounded-xl shadow-sm shrink-0">
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <button onClick={openAddModal} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold flex justify-center items-center gap-2 shadow-sm transition-transform active:scale-95">
@@ -120,8 +132,8 @@ const SopirList = () => {
                   </td>
                   <td className="p-4 text-center">
                     <div className="flex justify-center items-center gap-2">
-                      <button onClick={() => openEditModal(s)} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit2 size={16}/></button>
-                      <button onClick={async () => { if(confirm('Hapus sopir ini?')) { await axios.delete(`${baseURL}/api/sopir/${s.id}`); fetchSopirs(); } }} className="text-red-500 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button>
+                      <button onClick={() => openEditModal(s)} disabled={isLoading} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100 disabled:opacity-50"><Edit2 size={16}/></button>
+                      <button onClick={() => handleDelete(s.id)} disabled={isLoading} className="text-red-500 bg-red-50 p-2 rounded-lg hover:bg-red-100 disabled:opacity-50"><Trash2 size={16}/></button>
                     </div>
                   </td>
                 </tr>
@@ -161,10 +173,13 @@ const SopirList = () => {
               <div><label className="text-xs font-semibold text-gray-600 mb-1 block">Nomor WA / Kontak</label><input className="border-2 p-2.5 rounded-lg w-full text-sm outline-none focus:border-blue-500" value={form.kontak} onChange={e=>setForm({...form, kontak:e.target.value})} placeholder="08..." /></div>
               
               <div className="pt-2">
-                <div className="flex justify-between items-center mb-2">
+                <div className="flex justify-between items-center mb-3">
                   <label className="text-xs font-bold text-gray-800 uppercase tracking-wide">Data Tarif Ongkir Daerah</label>
-                  <button onClick={handleAddOngkirRow} className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold">+ Tambah Daerah</button>
                 </div>
+
+                <button onClick={handleAddOngkirRow} className="w-full mb-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 shadow-sm transition-transform active:scale-95">
+                  <PlusCircle size={14}/> + Tambah Daerah Baru
+                </button>
                 
                 <div className="space-y-2">
                   {form.ongkir.map((o, idx) => (
@@ -180,8 +195,10 @@ const SopirList = () => {
             </div>
 
             <div className="p-4 border-t bg-gray-50 flex gap-3 shrink-0">
-              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-100">Batal</button>
-              <button onClick={handleSave} className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700"><Save size={18} className="inline mr-1"/> Simpan</button>
+              <button onClick={() => setIsModalOpen(false)} disabled={isLoading} className="flex-1 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-100 disabled:opacity-50">Batal</button>
+              <button onClick={handleSave} disabled={isLoading} className={`flex-1 py-2.5 text-white rounded-lg text-sm font-bold flex justify-center items-center gap-2 disabled:cursor-not-allowed ${isLoading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                {isLoading ? 'Menyimpan...' : <><Save size={16}/> Simpan</>}
+              </button>
             </div>
           </div>
         </div>

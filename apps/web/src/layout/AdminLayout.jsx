@@ -31,8 +31,7 @@ const AdminLayout = ({ children, activeTab, setActiveTab, setToken }) => {
     if(window.confirm("Apakah Anda yakin ingin keluar dari sistem?")) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      setToken(null); // Memaksa App.jsx untuk kembali merender LoginPage
-      window.location.reload(); 
+      setToken(null);
     }
   };
 

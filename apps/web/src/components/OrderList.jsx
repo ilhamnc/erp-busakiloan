@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Search, Edit2, Trash2, PlusCircle, X, ShoppingCart, FileText, Save, User, Package, CreditCard, Truck, Download } from 'lucide-react'; 
 import CreatableSelect from 'react-select/creatable';
+import LoadingOverlay from './LoadingOverlay';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -11,12 +12,15 @@ const OrderList = () => {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [sopirs, setSopirs] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
   
   const currentMonthDate = new Date();
-  const currentMonth = `${currentMonthDate.getFullYear()}-${String(currentMonthDate.getMonth() + 1).padStart(2, '0')}`;
-  
+  const defaultStart = `${currentMonthDate.getFullYear()}-${String(currentMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
+  const defaultEnd = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() + 1, 0).toISOString().split('T')[0];
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterBulan, setFilterBulan] = useState(currentMonth);
+  const [startDate, setStartDate] = useState(defaultStart);
+  const [endDate, setEndDate] = useState(defaultEnd);
   const [filterStatus, setFilterStatus] = useState('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -38,9 +42,11 @@ const OrderList = () => {
     fetchOrders(); fetchCustomers(); fetchProducts(); fetchSopirs();
   }, []);
 
-  const fetchOrders = () => axios.get(`${baseURL}/api/orders`).then(res => {
-    if (Array.isArray(res.data)) setOrders(res.data);
-  }).catch(console.error);
+  const fetchOrders = async () => {
+    setIsLoading(true);
+    try { const res = await axios.get(`${baseURL}/api/orders`); if (Array.isArray(res.data)) setOrders(res.data); }
+    catch(e) { console.error(e); } finally { setIsLoading(false); }
+  };
   
   const fetchCustomers = () => axios.get(`${baseURL}/api/customers`).then(res => {
     if (Array.isArray(res.data)) setCustomers(res.data.map(c => ({value: c.id, label: `${c.nama} (#${c.id}) (${c.alamat || '-'})`, dataAsli: c})));
@@ -67,12 +73,8 @@ const OrderList = () => {
   };
 
   const handleExportExcel = () => {
-    let start, end;
-    if (filterBulan) {
-      start = `${filterBulan}-01`; end = new Date(filterBulan.split('-')[0], filterBulan.split('-')[1], 0).toISOString().split('T')[0];
-    } else {
-      start = `${new Date().getFullYear()}-01-01`; end = `${new Date().getFullYear()}-12-31`;
-    }
+    const start = startDate || `${new Date().getFullYear()}-01-01`;
+    const end = endDate || `${new Date().getFullYear()}-12-31`;
     const token = localStorage.getItem('token');
     window.open(`${baseURL}/api/export?start=${start}&end=${end}&type=penjualan&token=${token}`, '_blank');
   };
@@ -208,24 +210,25 @@ const OrderList = () => {
     if (form.items.length === 0) return alert("Pilih minimal 1 barang!");
     if (!window.confirm("Apakah Anda yakin ingin menyimpan data transaksi pesanan ini?")) return;
 
+    setIsLoading(true);
     try {
       const payload = { 
         status: form.status, dp: dpNum, tanggal: form.tanggal, tanggalJatuhTempo: form.tanggalJatuhTempo, keterangan: form.catatan, 
         items: form.items, ongkosKirim: ongkirNum, ongkosKirimModal: ongkirModalNum, metodeBayar: form.metodeBayar, sopirId: form.sopirId?.value || null,
         buktiLunas: form.buktiLunas, customerId: form.customerId.value, totalHarga: totalBarang 
       };
-      
       if (isEditing) await axios.put(`${baseURL}/api/orders/${form.id}`, payload);
       else await axios.post(`${baseURL}/api/orders`, payload);
-      
       setIsModalOpen(false); fetchOrders();
     } catch (e) { alert("Gagal menyimpan order: " + (e.response?.data?.error || e.message)); }
+    finally { setIsLoading(false); }
   };
 
   const deleteOrder = async (id) => {
-    if (confirm('Yakin hapus order permanen?')) {
-      try { await axios.delete(`${baseURL}/api/orders/${id}`); fetchOrders(); } catch (e) {}
-    }
+    if (!confirm('Yakin hapus order permanen?')) return;
+    setIsLoading(true);
+    try { await axios.delete(`${baseURL}/api/orders/${id}`); fetchOrders(); }
+    catch { } finally { setIsLoading(false); }
   };
 
   let processedOrders = orders.filter(o => {
@@ -234,22 +237,20 @@ const OrderList = () => {
     const custAlamat = o.customer?.alamat || '';
     const matchSearch = o.id?.toString().includes(st) || custName.toLowerCase().includes(st) || custAlamat.toLowerCase().includes(st);
     
-    let matchBulan = true;
-    if (filterBulan !== '') {
-       try {
-         if(!o.tanggal) matchBulan = false;
-         else {
-            const d = new Date(o.tanggal);
-            if (!isNaN(d.getTime())) {
-                const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                matchBulan = yearMonth === filterBulan;
-            } else matchBulan = false;
-         }
-       } catch(e) { matchBulan = false; }
+    let matchTanggal = true;
+    if (startDate || endDate) {
+      try {
+        if (!o.tanggal) { matchTanggal = false; }
+        else {
+          const d = new Date(o.tanggal).setHours(0,0,0,0);
+          if (startDate) matchTanggal = matchTanggal && d >= new Date(startDate).setHours(0,0,0,0);
+          if (endDate) matchTanggal = matchTanggal && d <= new Date(endDate).setHours(23,59,59,999);
+        }
+      } catch { matchTanggal = false; }
     }
     
     const matchStatus = filterStatus === '' || o.status === filterStatus;
-    return matchSearch && matchBulan && matchStatus;
+    return matchSearch && matchTanggal && matchStatus;
   });
 
   const formatRp = (n) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n || 0);
@@ -274,6 +275,7 @@ const OrderList = () => {
 
   return (
     <div className="flex flex-col h-full space-y-4">
+      <LoadingOverlay isLoading={isLoading} />
       <div className="bg-white p-4 border flex flex-col gap-4 rounded-2xl shadow-sm">
         <div className="flex flex-col sm:flex-row gap-2">
           <button onClick={openAddModal} className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2 shrink-0">
@@ -285,9 +287,15 @@ const OrderList = () => {
         </div>
 
         <div className="flex flex-col lg:flex-row gap-3 items-center w-full">
-          <div className="flex gap-2 w-full lg:w-auto">
-             <input type="month" className="p-2.5 border rounded-xl text-sm outline-none text-gray-700 w-1/2 lg:w-auto" value={filterBulan} onChange={e => setFilterBulan(e.target.value)} />
-             <select className="p-2.5 border rounded-xl text-sm outline-none text-gray-700 w-1/2 lg:w-auto font-semibold bg-gray-50 cursor-pointer" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+          <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center">
+            <div className="flex items-center gap-2 bg-gray-50 border rounded-xl px-3 py-2">
+              <span className="text-xs font-bold text-gray-500">Dari</span>
+              <input type="date" className="p-1 text-sm outline-none bg-transparent text-gray-700 font-semibold" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              <span className="text-gray-400 font-bold">—</span>
+              <span className="text-xs font-bold text-gray-500">Sampai</span>
+              <input type="date" className="p-1 text-sm outline-none bg-transparent text-gray-700 font-semibold" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            </div>
+             <select className="p-2.5 border rounded-xl text-sm outline-none text-gray-700 font-semibold bg-gray-50 cursor-pointer" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                <option value="">Semua Status</option>
                <option value="MENUNGGU">Menunggu</option>
                <option value="DP">DP</option>
@@ -520,8 +528,8 @@ const OrderList = () => {
                       <span className="text-2xl font-black">{formatRp(Math.abs(sisaBayar))}</span>
                     </div>
                   </div>
-                  <button type="button" onClick={handleSaveOrder} className="w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-xl font-bold text-base mt-6 shadow-md transition-transform active:scale-95 flex justify-center items-center gap-2">
-                    <Save size={20}/> SIMPAN TRANSAKSI
+                  <button type="button" onClick={handleSaveOrder} disabled={isLoading} className={`w-full text-white py-4 rounded-xl font-bold text-base mt-6 shadow-md transition-transform active:scale-95 flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${isLoading ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'}`}>
+                    <Save size={20}/> {isLoading ? 'Menyimpan...' : 'SIMPAN TRANSAKSI'}
                   </button>
                 </div>
               </div>

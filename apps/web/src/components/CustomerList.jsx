@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Edit2, Trash2, Save, X, Search, UserPlus, Tag, FileText, MapPin, Phone, Download, Trophy, Calendar } from 'lucide-react';
+import { Edit2, Trash2, Save, X, Search, UserPlus, Tag, FileText, MapPin, Phone, Download, Trophy, Calendar, FolderPlus } from 'lucide-react';
+import LoadingOverlay from './LoadingOverlay';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -8,6 +9,7 @@ const CustomerList = () => {
   const [customers, setCustomers] = useState([]);
   const [filteredCustomers, setFilteredCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({ id: null, nama: '', alamat: '', kontak: '', ongkirDefault: '', ongkirPerusahaanDefault: '', catatan: '' });
@@ -17,6 +19,12 @@ const CustomerList = () => {
   const [specialPriceModal, setSpecialPriceModal] = useState({ isOpen: false, customer: null });
   const [noteModal, setNoteModal] = useState(null);
   const [spForm, setSpForm] = useState({ productId: '', harga: '' });
+
+  // STATE KATEGORI PELANGGAN
+  const [categories, setCategories] = useState([]);
+  const [isCatModalOpen, setIsCatModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
 
   // STATE UNTUK FITUR RANK PROFIT
   const [isRankModalOpen, setIsRankModalOpen] = useState(false);
@@ -36,17 +44,19 @@ const CustomerList = () => {
   const [rankData, setRankData] = useState([]);
   const [isCalculatingRank, setIsCalculatingRank] = useState(false);
 
-  useEffect(() => { fetchCustomers(); fetchProducts(); }, []);
+  useEffect(() => { fetchCustomers(); fetchProducts(); fetchCategories(); }, []);
   
   useEffect(() => { 
     setFilteredCustomers(customers.filter(c => {
       const st = searchTerm.toLowerCase();
-      return (c.id?.toString().includes(st)) ||
+      const matchSearch = (c.id?.toString().includes(st)) ||
              (c.nama && c.nama.toLowerCase().includes(st)) ||
              (c.alamat && c.alamat.toLowerCase().includes(st)) ||
              (c.kontak && c.kontak.toLowerCase().includes(st));
+      const matchCategory = filterCategory === '' || c.categoryId?.toString() === filterCategory;
+      return matchSearch && matchCategory;
     })); 
-  }, [searchTerm, customers]);
+  }, [searchTerm, filterCategory, customers]);
 
   const fetchCustomers = () => {
     axios.get(`${baseURL}/api/customers`).then(res => setCustomers(res.data)).catch(err => alert("Gagal memuat data pelanggan. Cek terminal backend!"));
@@ -54,29 +64,58 @@ const CustomerList = () => {
   
   const fetchProducts = () => axios.get(`${baseURL}/api/products`).then(res => setProducts(res.data)).catch(e => console.error(e));
 
-  const openAddModal = () => { setForm({ id: null, nama: '', alamat: '', kontak: '', ongkirDefault: '', ongkirPerusahaanDefault: '', catatan: '' }); setIsEditing(false); setIsModalOpen(true); };
-  const openEditModal = (c) => { setForm({ id: c.id, nama: c.nama, alamat: c.alamat, kontak: c.kontak, ongkirDefault: c.ongkirDefault, ongkirPerusahaanDefault: c.ongkirPerusahaanDefault, catatan: c.catatan || '' }); setIsEditing(true); setIsModalOpen(true); };
+  const fetchCategories = () => axios.get(`${baseURL}/api/customers/categories`).then(res => setCategories(res.data)).catch(e => console.error(e));
+
+  const handleSaveCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    setIsLoading(true);
+    try {
+      await axios.post(`${baseURL}/api/customers/categories`, { nama: newCategoryName });
+      setNewCategoryName('');
+      fetchCategories();
+    } catch { alert('Gagal menyimpan kategori'); }
+    finally { setIsLoading(false); }
+  };
+
+  const handleDeleteCategory = async (id, nama) => {
+    if (!window.confirm(`Yakin hapus kategori "${nama}"?`)) return;
+    setIsLoading(true);
+    try {
+      await axios.delete(`${baseURL}/api/customers/categories/${id}`);
+      fetchCategories(); fetchCustomers();
+    } catch { alert('Gagal! Kategori mungkin masih dipakai oleh pelanggan.'); }
+    finally { setIsLoading(false); }
+  };
+
+  const openAddModal = () => { setForm({ id: null, nama: '', alamat: '', kontak: '', ongkirDefault: '', ongkirPerusahaanDefault: '', catatan: '', categoryId: '' }); setIsEditing(false); setIsModalOpen(true); };
+  const openEditModal = (c) => { setForm({ id: c.id, nama: c.nama, alamat: c.alamat, kontak: c.kontak, ongkirDefault: c.ongkirDefault, ongkirPerusahaanDefault: c.ongkirPerusahaanDefault, catatan: c.catatan || '', categoryId: c.categoryId || '' }); setIsEditing(true); setIsModalOpen(true); };
 
   const handleSave = async () => { 
     if (!form.nama) return alert("Nama wajib diisi!"); 
     if (!window.confirm("Apakah Anda yakin ingin menyimpan data pelanggan ini?")) return;
+    setIsLoading(true);
     try {
       await axios.post(`${baseURL}/api/customers/upsert`, form); 
       setIsModalOpen(false); fetchCustomers(); alert("✅ Data pelanggan berhasil disimpan!");
     } catch (error) { alert("❌ GAGAL MENYIMPAN!\n\nPesan Error: " + (error.response?.data?.error || error.message)); }
+    finally { setIsLoading(false); }
   };
 
   const handleSaveSpecialPrice = async () => { 
     if(!spForm.productId || !spForm.harga) return; 
+    setIsLoading(true);
     try {
       await axios.post(`${baseURL}/api/customers/special-price`, { customerId: specialPriceModal.customer.id, productId: spForm.productId, harga: spForm.harga }); 
       setSpForm({productId: '', harga: ''}); fetchCustomers(); setSpecialPriceModal({isOpen: false, customer: null}); 
     } catch(e) { alert("Gagal menyimpan harga khusus"); }
+    finally { setIsLoading(false); }
   };
   
   const handleRemoveSpecialPrice = async (id) => { 
+    setIsLoading(true);
     try { await axios.delete(`${baseURL}/api/customers/special-price/${id}`); fetchCustomers(); setSpecialPriceModal(prev => ({...prev, isOpen: false})); }
     catch(e) { alert("Gagal menghapus harga khusus"); }
+    finally { setIsLoading(false); }
   };
 
   const handleExportExcel = () => { const token = localStorage.getItem('token'); window.open(`${baseURL}/api/export?type=pelanggan&token=${token}`, '_blank'); };
@@ -161,17 +200,23 @@ const CustomerList = () => {
 
   return (
     <div className="flex flex-col h-full space-y-4">
+      <LoadingOverlay isLoading={isLoading} />
       <div className="bg-white p-4 border flex flex-col xl:flex-row justify-between items-center gap-4 rounded-xl shadow-sm shrink-0">
         <div className="flex flex-wrap gap-2 w-full xl:w-auto">
           <button onClick={openAddModal} className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg font-bold flex justify-center items-center gap-2 shadow-sm transition-transform active:scale-95 text-xs md:text-sm whitespace-nowrap"><UserPlus size={16}/> Tambah Pelanggan</button>
-          
+          <button onClick={() => setIsCatModalOpen(true)} className="flex-1 sm:flex-none bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2.5 rounded-lg font-bold flex justify-center items-center gap-2 text-xs md:text-sm whitespace-nowrap"><FolderPlus size={16}/> Kategori</button>
           <button onClick={() => setIsRankModalOpen(true)} className="flex-1 sm:flex-none bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2.5 rounded-lg font-bold flex justify-center items-center gap-2 shadow-sm transition-transform active:scale-95 text-xs md:text-sm whitespace-nowrap"><Trophy size={16}/> Rank Profit</button>
-
           <button onClick={handleExportExcel} className="flex-1 sm:flex-none bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-bold flex justify-center items-center gap-2 shadow-sm transition-transform active:scale-95 text-xs md:text-sm whitespace-nowrap"><Download size={16}/> Export Excel</button>
         </div>
-        <div className="relative w-full xl:w-80">
-          <Search className="absolute left-3 top-3 text-gray-400" size={16} />
-          <input className="pl-10 pr-4 py-2.5 border rounded-lg w-full text-sm outline-none focus:border-blue-500 shadow-sm" placeholder="Cari ID / Nama / Daerah / Nomor..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+        <div className="flex gap-2 w-full xl:w-auto">
+          <select className="border p-2.5 rounded-lg text-sm font-semibold bg-gray-50 outline-none flex-1 xl:w-48" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
+            <option value="">Semua Kategori</option>
+            {categories.map(c => <option key={c.id} value={c.id}>{c.nama}</option>)}
+          </select>
+          <div className="relative flex-1 xl:w-80">
+            <Search className="absolute left-3 top-3 text-gray-400" size={16} />
+            <input className="pl-10 pr-4 py-2.5 border rounded-lg w-full text-sm outline-none focus:border-blue-500 shadow-sm" placeholder="Cari ID / Nama / Daerah / Nomor..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          </div>
         </div>
       </div>
 
@@ -181,6 +226,7 @@ const CustomerList = () => {
             <tr>
               <th className="p-4">ID Pelanggan</th>
               <th className="p-4">Nama Pelanggan</th>
+              <th className="p-4">Kategori</th>
               <th className="p-4">Terakhir Order</th>
               <th className="p-4">Daerah / Kontak</th>
               <th className="p-4 text-right">Ongkir dari Customer</th>
@@ -201,6 +247,12 @@ const CustomerList = () => {
                       <button onClick={() => setNoteModal({ nama: c.nama, text: c.catatan })} className="mt-1.5 text-[10px] text-yellow-700 flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-md border border-yellow-200 hover:bg-yellow-100 transition-colors cursor-pointer max-w-xs overflow-hidden"><FileText size={12} className="shrink-0"/> <span className="truncate">{c.catatan}</span></button>
                     )}
                   </td>
+                  <td className="p-4">
+                    {c.category 
+                      ? <span className="text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-lg">{c.category.nama}</span>
+                      : <span className="text-xs text-gray-400 italic">-</span>
+                    }
+                  </td>
                   <td className="p-4 text-gray-600">{lastOrder ? <span className="font-semibold text-blue-700 bg-blue-50 px-3 py-1.5 rounded-md border border-blue-100">{new Date(lastOrder.tanggal).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})}</span> : <span className="text-gray-400 italic">Belum ada</span>}</td>
                   <td className="p-4"><div className="font-medium text-gray-700 flex items-center gap-1.5 mb-1"><MapPin size={14} className="text-gray-400"/>{c.alamat || '-'}</div><div className="text-xs text-blue-600 font-medium flex items-center gap-1.5"><Phone size={14} className="text-gray-400"/>{c.kontak || '-'}</div></td>
                   <td className="p-4 text-right text-green-700 font-bold">{formatRp(c.ongkirDefault)}</td>
@@ -210,10 +262,50 @@ const CustomerList = () => {
                 </tr>
               )
             })}
-            {filteredCustomers.length === 0 && <tr><td colSpan="8" className="p-8 text-center text-gray-400">Tidak ada data pelanggan.</td></tr>}
+            {filteredCustomers.length === 0 && <tr><td colSpan="9" className="p-8 text-center text-gray-400">Tidak ada data pelanggan.</td></tr>}
           </tbody>
         </table>
       </div>
+
+      {/* --- MODAL KELOLA KATEGORI PELANGGAN --- */}
+      {isCatModalOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10000] p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-[400px]">
+            <div className="p-3 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
+              <h3 className="font-bold text-sm text-gray-800 flex items-center gap-1.5"><FolderPlus size={16}/> Kelola Kategori Pelanggan</h3>
+              <button onClick={() => setIsCatModalOpen(false)} className="text-gray-400 hover:text-red-500 bg-gray-200 p-1.5 rounded-full"><X size={16}/></button>
+            </div>
+            <div className="p-4">
+              <div className="flex gap-2 mb-4">
+                <input
+                  className="border-2 p-2 rounded-lg flex-1 outline-none focus:border-blue-500 text-xs"
+                  placeholder="Nama kategori baru..."
+                  value={newCategoryName}
+                  onChange={e => setNewCategoryName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSaveCategory()}
+                />
+                <button onClick={handleSaveCategory} disabled={isLoading} className="bg-blue-600 hover:bg-blue-700 text-white px-3 rounded-lg font-bold shadow text-xs disabled:opacity-50">Tambah</button>
+              </div>
+              <div className="max-h-52 overflow-y-auto border rounded-lg bg-gray-50">
+                <table className="w-full text-xs text-left">
+                  <tbody className="divide-y">
+                    {categories.map(c => (
+                      <tr key={c.id}>
+                        <td className="p-2.5 font-bold text-gray-700 uppercase">{c.nama}</td>
+                        <td className="p-2.5 text-xs text-gray-400">{customers.filter(cu => cu.categoryId === c.id).length} pelanggan</td>
+                        <td className="p-2.5 text-right">
+                          <button onClick={() => handleDeleteCategory(c.id, c.nama)} className="text-red-500 bg-red-100 p-1 rounded hover:bg-red-200"><Trash2 size={12}/></button>
+                        </td>
+                      </tr>
+                    ))}
+                    {categories.length === 0 && <tr><td colSpan="3" className="p-4 text-center text-gray-400">Belum ada kategori</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- MODAL RANK PROFIT --- */}
       {isRankModalOpen && (
@@ -282,8 +374,15 @@ const CustomerList = () => {
                 <div><label className="text-[10px] font-bold text-gray-500 mb-1 block uppercase tracking-wider">Ongkir ke Sopir</label><input type="number" className="border-2 p-2.5 rounded-lg w-full text-sm font-bold text-red-600 outline-none focus:border-red-500 bg-white" value={form.ongkirPerusahaanDefault} onChange={e=>setForm({...form, ongkirPerusahaanDefault:e.target.value})} placeholder="0" /></div>
               </div>
               <div><label className="text-xs font-semibold text-gray-600 mb-1 block">Catatan Khusus</label><textarea className="border-2 p-2.5 rounded-lg w-full text-sm h-20 outline-none focus:border-blue-500" value={form.catatan} onChange={e=>setForm({...form, catatan:e.target.value})}></textarea></div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">Kategori Pelanggan</label>
+                <select className="border-2 p-2.5 rounded-lg w-full text-sm outline-none focus:border-blue-500 bg-white" value={form.categoryId || ''} onChange={e=>setForm({...form, categoryId: e.target.value})}>
+                  <option value="">-- Tanpa Kategori --</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.nama}</option>)}
+                </select>
+              </div>
             </div>
-            <div className="p-4 border-t bg-gray-50 flex gap-3 shrink-0"><button onClick={() => setIsModalOpen(false)} className="flex-1 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-100 transition-colors">Batal</button><button onClick={handleSave} className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold flex justify-center items-center gap-2 hover:bg-blue-700 transition-transform active:scale-95"><Save size={18}/> Simpan Data</button></div>
+            <div className="p-4 border-t bg-gray-50 flex gap-3 shrink-0"><button onClick={() => setIsModalOpen(false)} className="flex-1 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-100 transition-colors">Batal</button><button onClick={handleSave} disabled={isLoading} className={`flex-1 py-2.5 text-white rounded-lg text-sm font-bold flex justify-center items-center gap-2 transition-transform active:scale-95 disabled:cursor-not-allowed ${isLoading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}><Save size={18}/> {isLoading ? 'Menyimpan...' : 'Simpan Data'}</button></div>
           </div>
         </div>
       )}

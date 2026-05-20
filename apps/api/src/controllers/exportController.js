@@ -2,7 +2,7 @@ import prisma from '../lib/prisma.js';
 import ExcelJS from 'exceljs';
 
 export const exportData = async (req, res) => {
-  const { start, end, type = 'semua' } = req.query;
+  const { start, end, type = 'semua', tab, search } = req.query;
   const userId = req.user.userId;
 
   try {
@@ -17,11 +17,16 @@ export const exportData = async (req, res) => {
     // 1. DATA MASTER (Pelanggan, Sopir, Stok, Supplier)
     // ==========================================
     if (type === 'semua' || type === 'pelanggan') {
-      const customers = await prisma.customer.findMany({ where: { userId }, include: { hargaKhusus: { include: { product: true } } }, orderBy: { nama: 'asc' } });
+      const customers = await prisma.customer.findMany({ 
+        where: { userId }, 
+        include: { category: true, hargaKhusus: { include: { product: true } } }, 
+        orderBy: { nama: 'asc' } 
+      });
       const sheet = workbook.addWorksheet('Data Pelanggan');
       sheet.columns = [ 
         { header: 'ID', key: 'id', width: 10 }, 
         { header: 'Nama Pelanggan', key: 'nama', width: 25 }, 
+        { header: 'Kategori', key: 'kategori', width: 20 },
         { header: 'Kontak', key: 'kontak', width: 20 }, 
         { header: 'Alamat', key: 'alamat', width: 35 }, 
         { header: 'Ongkir Customer', key: 'ongkir', width: 20 }, 
@@ -32,6 +37,7 @@ export const exportData = async (req, res) => {
       customers.forEach(c => sheet.addRow({ 
         id: `#${c.id}`, 
         nama: c.nama, 
+        kategori: c.category?.nama || '-',
         kontak: c.kontak || '-', 
         alamat: c.alamat || '-', 
         ongkir: c.ongkirDefault, 

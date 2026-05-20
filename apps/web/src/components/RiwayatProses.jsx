@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Search, ArrowDownLeft, ArrowUpRight, X, PackagePlus, ShoppingCart, Download } from 'lucide-react';
+import LoadingOverlay from './LoadingOverlay';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -9,13 +10,16 @@ const RiwayatProses = () => {
   const [history, setHistory] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBulan, setFilterBulan] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const fetchHistory = async () => {
+      setIsLoading(true);
       try {
         const res = await axios.get(`${baseURL}/api/products/history/global`);
         setHistory(res.data);
       } catch (e) { console.error("Gagal load riwayat", e); }
+      finally { setIsLoading(false); }
     };
     fetchHistory();
   }, []);
@@ -34,7 +38,8 @@ const RiwayatProses = () => {
       end = `${new Date().getFullYear()}-12-31`;
     }
     const token = localStorage.getItem('token');
-    window.open(`${baseURL}/api/export?start=${start}&end=${end}&type=mutasi&token=${token}`, '_blank');
+    // Kirim juga activeTab agar backend tahu sheet mana yang diexport
+    window.open(`${baseURL}/api/export?start=${start}&end=${end}&type=mutasi&tab=${activeTab}&token=${token}`, '_blank');
   };
 
   const filteredHistory = history.filter(h => {
@@ -46,6 +51,7 @@ const RiwayatProses = () => {
 
   return (
     <div className="flex flex-col h-full space-y-3 md:space-y-4">
+      {isLoading && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm"><div className="bg-white p-6 rounded-xl shadow-2xl flex flex-col items-center gap-3"><div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-600"></div><p className="font-bold text-gray-700">Memuat riwayat...</p></div></div>}
       <div className="flex flex-col md:flex-row gap-3 shrink-0">
         <div className="flex gap-2 flex-1">
           <button onClick={() => {setActiveTab('masuk'); setSearchTerm('');}} className={`flex-1 py-3 rounded-xl font-bold flex justify-center items-center gap-2 border-2 transition-all text-xs md:text-sm ${activeTab === 'masuk' ? 'bg-green-50 border-green-500 text-green-700 shadow-sm' : 'bg-white border-gray-100 text-gray-500 hover:bg-gray-50'}`}>
